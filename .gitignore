@@ -1,0 +1,21 @@
+# Virtual Environment
+venv/
+.venv/
+ENV/
+
+# Configuration Files (Security Credentials)
+config.ini
+
+# Local SQLite Database (Operational State)
+*.db
+scheduling_state.db
+
+# PyInstaller / Build Artifacts
+build/
+dist/
+*.spec
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo

@@ -1,0 +1,163 @@
+# Prompt: Desktop Production Scheduling App (Sharpening Orders)
+
+## 1. Overview
+
+I want you to develop an **installable Python desktop application for Windows** that manages production scheduling for a tool-sharpening line. The app runs on a **single PC only** (not multi-user, no need for synchronization across client machines).
+
+The app has two data sources:
+
+* **SQL Server** (existing corporate database): **read-only** source of truth for orders and the machines list. The app must never write to this database.
+
+* **Local SQLite** (a file inside the app's own directory): stores **all operational state** — order-to-machine assignment, production queue order, statuses, and a full history/log of everything that happens in the application.
+
+The goal is: pull open orders from SQL Server, let me visually organize them by machine and execution order (in "Planning" mode), lock that organization when it's time to produce ("Production" mode), and track the progress of each order (completed, partially completed, delayed, cancelled) with full traceability.
+
+---
+
+## 2. Suggested tech stack (open to alternatives)
+
+* **UI**: PySide6 (Qt for Python) — native, robust drag-and-drop support between widgets, allows card-style styling, packages well into a Windows installer.
+
+* **SQL Server connection**: `pyodbc` (or `pymssql` as an alternative).
+
+* **Local SQLite**: native `sqlite3` or SQLAlchemy as an abstraction layer (makes migrations and later reporting queries easier).
+
+* **Packaging**: PyInstaller to build the executable + Inno Setup to produce a Windows installer.
+
+* **SQL Server credentials**: never hardcoded in the source; use an external config file (`config.ini` or `.env`) kept out of version control, or the Windows Credential Manager via `keyring`.
+
+* Feel free to suggest alternatives if you see a better approach, but justify the change.
+
+---
+
+## 3. Data sources
+
+### 3.1 SQL Server (read-only)
+
+Two queries will be provided by me separately and must be isolated in their own module (e.g. `queries.py` or `.sql` files), so I can adjust them without touching the app's logic:
+
+**Orders query**
+
+* Returns open orders from the **last 12 months**.
+
+* Already includes an **estimated order time** column, calculated as `sharpening time × number of tools in the order`. The app does not need to recalculate this time — just consume it.
+
+* Assume fields such as: order ID, tool code/description, quantity, estimated time (minutes or hours — to be defined in the query), order open date, and any other relevant columns I will detail in the query itself.
+
+**Machines list query**
+
+* Returns the list of available machines.
+
+* This is a **dynamic** list (the app must generate machine containers automatically from this query's result), though in practice it rarely changes. It should be re-queried on every manual refresh (no need for automatic polling).
+
+### 3.2 Local SQLite (read/write)
+
+Must contain, at minimum, the following entities (adjust names/structure as you see fit, but keep the intent):
+
+* **`assignments`** (current allocation): which order is on which machine, its position in the queue, current status (`pending`, `in_queue`, `completed`, `partial`, `delayed`, `cancelled`), completed quantity (for partials), remaining quantity.
+
+* **`app_state`**: current application mode (`planning` or `production`). Switching between these two modes is **free and unrestricted in both directions**, and this transition itself does **not** need to be logged.
+
+* **`status_log`** / **`audit_log`**: log of **everything else** that happens — status changes, complete, partial, cancel, card movement (drag-and-drop), delay justifications. Each entry should have: timestamp, event type, affected order (if applicable), affected machine (if applicable), before/after values when relevant, and comment/justification when present.
+
+* **`machines_cache`** (optional): local cache of the last machines list read from SQL Server, for an eventual offline viewing mode.
+
+This history should be enough for me to later build reports such as: "how many hours were allocated to machine X on day Y", "which machine produced the most of tool Z", "how many orders were completed out of order and why". I don't need the report screens now — I just need the data recorded in a way that allows this to be queried later directly from SQLite.
+
+---
+
+## 4. Interface structure
+
+### 4.1 Top of the screen
+
+* **Top-left corner**: **"Refresh"** button. On click, it re-queries SQL Server (orders and machines) and updates the list of open orders, without discarding assignments already made.
+
+* **Top-right corner**: a **toggle switch** to switch between **"Planning"** and **"Production"** modes.
+
+### 4.2 Orders list (left side, below the refresh button)
+
+* A list box of open orders from the last 12 months, pulled from SQL Server.
+
+* Each order is displayed as a **draggable card**.
+
+* Each card has a **"Remove" button**. Removing an order is functionally the **same as cancelling** it (test orders, wrong entries, etc.) — this never affects SQL Server, only the local state, and must be logged.
+
+### 4.3 Machine containers (rest of the screen)
+
+* One container per machine, generated dynamically from the machines query.
+
+* **Title** (machine name) in the top-left corner of the container.
+
+* **"Occupied machine time"** in the top-right corner of the container: sum of the estimated times of all orders currently assigned to that machine. Must recalculate automatically whenever an order is added, removed, or moved.
+
+* Inside the container, assigned orders are displayed in the **planned execution order** (the order set via drag-and-drop).
+
+### 4.4 Behavior by mode
+
+**"Planning" mode**
+
+* Drag-and-drop is **enabled**: orders can be dragged from the list into machine containers, and reordered between/within containers.
+
+* Order action buttons (Complete/Partial) are **disabled** in this mode.
+
+**"Production" mode**
+
+* Drag-and-drop is **completely disabled** — assignment and queue order for each machine are locked as soon as the mode switches to Production. Orders cannot be moved between machines or reordered.
+
+* Each assigned order card now shows the following action buttons: **"Complete"**, **"Partial"**, **"Delayed"**, and **"Remove"** (= cancel, see 4.5).
+
+Switching between "Planning" and "Production" (in either direction) is always allowed and free — it does not need to be justified or logged, only the resulting `app_state` value is what matters.
+
+### 4.5 Business rules for execution
+
+* **Mandatory order**: orders must be completed (complete or partial) in the same sequence they were planned in the machine's queue.
+
+  * If the user tries to complete or partially complete an order that is **not first in the queue**, the app must **require a mandatory comment** justifying the reason before allowing the action. This comment goes into `status_log`.
+
+* **Complete**: marks the order as completed, removes it from the machine's active queue, logs the action.
+
+* **Partial finished**: the user must enter **how many units/tools were completed**. The system calculates the remaining quantity, updates the order's status to "partial", and the **remaining balance goes back to the orders list** (outside of any machine), available to be re-planned later. All of this is logged (quantity done, quantity remaining, timestamp).
+
+* **Delayed**: manual action, only available when the order is the **first in the queue** of its machine.
+
+  * Marking an order as Delayed sends it to the **end of that machine's queue** (the next order in line becomes first).
+
+  * Every delay **requires a mandatory comment/justification**, logged in `status_log`.
+
+* **Remove / Cancel** (same action, in either Planning or Production): removes the order from the machine (or from the general list), logging the reason.
+
+---
+
+## 5. Non-functional requirements
+
+* **Full traceability**: every relevant action (moving a card, changing status, removing an order, delay justification, out-of-order completion justification) must generate a log entry in the local SQLite, with a timestamp. The only exception is the Planning ⇄ Production toggle itself, which does not need to be logged.
+
+* **Persistence**: closing and reopening the app must restore the exact current state (assignments, statuses, current mode) from SQLite.
+
+* **Connection resilience**: if SQL Server is unreachable at the moment of Refresh, the app must not crash — it should show a clear warning and keep working with the data already loaded locally.
+
+* **Packaging**: deliver as a Windows installer (.exe / installer), without requiring Python to be installed on the target machine.
+
+---
+
+## 6. What I will still provide
+
+* Orders SQL query, with the exact column definitions (including the estimated time column).
+
+* Machines list SQL query.
+
+* SQL Server connection details (to be handled as external configuration, never hardcoded).
+
+Treat these queries as a "data contract" — build the code so that if I adjust a column or rename something in the query, the impact on the rest of the app is minimal (keep the data access layer well isolated from the UI/business logic).
+
+---
+
+## 7. Expected deliverable
+
+* Source code organized into modules (UI, SQL Server data access, SQLite data access, business/state logic, logging).
+
+* Documented SQLite schema (table creation script).
+
+* Build/packaging instructions for the installer.
+
+* A short README explaining how to configure the SQL Server connection and how to run/build the installer.
