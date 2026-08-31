@@ -11,6 +11,7 @@ DB_FILE = os.path.join(_base_dir, "scheduling_state.db")
 def get_connection():
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout = 30000;")
     return conn
 
 def init_sqlite_db():

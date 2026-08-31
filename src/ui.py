@@ -1,5 +1,5 @@
 import sys
-from PySide6.QtCore import Qt, QMimeData
+from PySide6.QtCore import Qt, QMimeData, QTimer
 from PySide6.QtGui import QDrag, QFont, QColor, QPainter
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -30,8 +30,14 @@ COLORS = {
 }
 
 APP_STYLING = f"""
-QMainWindow {{ background-color: {COLORS['bg']}; }}
-QWidget {{ font-family: 'Segoe UI', 'Inter', sans-serif; }}
+QMainWindow {{ 
+    background-color: {COLORS['bg']}; 
+}}
+
+QWidget {{ 
+    font-family: 'Segoe UI', 'Inter', sans-serif; 
+}}
+
 QLabel {{ 
     color: {COLORS['text']};
 }}
@@ -454,6 +460,10 @@ class SchedulerMainWindow(QMainWindow):
         self.is_production_mode = (db_sqlite.get_app_mode() == 'production')
         self.init_ui()
         self.refresh_ui()
+
+        self.sync_timer = QTimer(self)
+        self.sync_timer.timeout.connect(self.refresh_ui)
+        self.sync_timer.start(10000)
 
     def init_ui(self):
         central_widget = QWidget()
