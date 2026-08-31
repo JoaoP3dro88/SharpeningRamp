@@ -9,7 +9,7 @@ def fetch_sql_server_data():
     """
     cfg = get_sql_config()
     conn_str = (
-        f"DRIVER={{{cfg['Driver']}}};"
+        f"DRIVER={cfg['Driver']};"
         f"SERVER={cfg['Server']};"
         f"DATABASE={cfg['Database']};"
         f"UID={cfg['UID']};"

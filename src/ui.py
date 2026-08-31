@@ -191,34 +191,60 @@ class DraggableOrderCard(QFrame):
             }}
         """)
         # Borda fina + sombra em todo card, para deixar claro onde ele começa e termina
-        self.setGraphicsEffect(soft_shadow(blur=18, y_offset=3, alpha=30))
+        self.setGraphicsEffect(soft_shadow(blur=14, y_offset=2, alpha=25))
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(6)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(4)
 
-        # Cabeçalho: ID do ordem + drag handle visual
+        # Linha 1: ID da ordem + ferramenta + botão remover (ícone), tudo lado a lado
         header_row = QHBoxLayout()
-        title = QLabel(f"⋮⋮  Ordem #{self.order_data['order_id']}")
-        title.setFont(QFont("Segoe UI", 10, QFont.Bold))
+        header_row.setSpacing(6)
+        title = QLabel(f"⋮⋮ #{self.order_data['order_id']}")
+        title.setFont(QFont("Segoe UI", 9, QFont.Bold))
         title.setStyleSheet(f"color: {COLORS['text']};")
         header_row.addWidget(title)
-        header_row.addStretch()
-        layout.addLayout(header_row)
-
-        sap_info = QLabel(f"SAP Ref: {self.order_data['sap_order_number']}")
-        sap_info.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 11px;")
-        layout.addWidget(sap_info)
-
-        open_date = QLabel(f"📅 Aberta em: {self.order_data['open_date']}")
-        open_date.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 11px;")
-        layout.addWidget(open_date)
 
         tool_info = QLabel(f"🔧 {self.order_data['tool_code']}")
-        tool_info.setStyleSheet(f"color: {COLORS['primary']}; font-size: 12px; font-weight: 600;")
-        layout.addWidget(tool_info)
+        tool_info.setStyleSheet(f"color: {COLORS['primary']}; font-size: 11px; font-weight: 600;")
+        header_row.addWidget(tool_info)
+        header_row.addStretch()
 
-        # Linha de badges (quantidade + lead time)
+        # Remove: SEMPRE visível, agora como ícone compacto no cabeçalho
+        self.btn_remove = QPushButton("🗑")
+        self.btn_remove.setToolTip("Remover")
+        self.btn_remove.setFixedSize(22, 22)
+        self.btn_remove.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #EF4444;
+                border: 1px solid #FECACA;
+                border-radius: 6px;
+                font-size: 11px;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                background-color: #FEF2F2;
+                border: 1px solid #EF4444;
+            }
+        """)
+        self.btn_remove.clicked.connect(self.on_remove)
+        header_row.addWidget(self.btn_remove)
+        layout.addLayout(header_row)
+
+        # Linha 2: SAP ref + data de abertura, lado a lado
+        info_row = QHBoxLayout()
+        info_row.setSpacing(10)
+        sap_info = QLabel(f"SAP: {self.order_data['sap_order_number']}")
+        sap_info.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 10px;")
+        open_date = QLabel(f"📅 {self.order_data['open_date']}")
+        open_date.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 10px;")
+        info_row.addWidget(sap_info)
+        info_row.addWidget(open_date)
+        info_row.addStretch()
+        layout.addLayout(info_row)
+
+        # Linha 3: badges (quantidade + lead time)
         meta_layout = QHBoxLayout()
         meta_layout.setSpacing(6)
         qty = make_badge(
@@ -234,19 +260,22 @@ class DraggableOrderCard(QFrame):
         meta_layout.addStretch()
         layout.addLayout(meta_layout)
 
-        # Botões de ação (modo produção)
+        # Botões de ação (modo produção) — compactos, só ícone com tooltip
         self.actions_widget = QWidget()
         actions_layout = QHBoxLayout(self.actions_widget)
-        actions_layout.setContentsMargins(0, 6, 0, 0)
-        actions_layout.setSpacing(6)
+        actions_layout.setContentsMargins(0, 4, 0, 0)
+        actions_layout.setSpacing(4)
 
-        self.btn_complete = QPushButton("✓ Completar")
+        self.btn_complete = QPushButton("✓")
+        self.btn_complete.setToolTip("Completar")
         self.btn_complete.setStyleSheet(self._action_style(COLORS["success"], COLORS["success_bg"]))
 
-        self.btn_partial = QPushButton("◐ Parcial")
+        self.btn_partial = QPushButton("◐")
+        self.btn_partial.setToolTip("Parcial")
         self.btn_partial.setStyleSheet(self._action_style(COLORS["warning"], COLORS["warning_bg"]))
 
-        self.btn_delay = QPushButton("⏸ Atrasar")
+        self.btn_delay = QPushButton("⏸")
+        self.btn_delay.setToolTip("Atrasar")
         self.btn_delay.setStyleSheet(self._action_style(COLORS["danger"], COLORS["danger_bg"]))
 
         self.btn_complete.clicked.connect(self.on_complete)
@@ -256,25 +285,8 @@ class DraggableOrderCard(QFrame):
         actions_layout.addWidget(self.btn_complete)
         actions_layout.addWidget(self.btn_partial)
         actions_layout.addWidget(self.btn_delay)
+        actions_layout.addStretch()
         layout.addWidget(self.actions_widget)
-
-        # Remove: SEMPRE visível, em qualquer modo
-        self.btn_remove = QPushButton("🗑  Remover")
-        self.btn_remove.setStyleSheet("""
-            QPushButton {
-                background-color: transparent;
-                color: #EF4444;
-                border: 1px solid #FECACA;
-                font-size: 11px;
-                padding: 5px 10px;
-            }
-            QPushButton:hover {
-                background-color: #FEF2F2;
-                border: 1px solid #EF4444;
-            }
-        """)
-        self.btn_remove.clicked.connect(self.on_remove)
-        layout.addWidget(self.btn_remove)
 
         self.set_mode(self.is_production_mode)
 
@@ -285,8 +297,13 @@ class DraggableOrderCard(QFrame):
                 background-color: {bg};
                 color: {color};
                 border: 1px solid {bg};
-                font-size: 11px;
-                padding: 6px 8px;
+                border-radius: 6px;
+                font-size: 12px;
+                padding: 0px;
+                min-width: 26px;
+                max-width: 26px;
+                min-height: 24px;
+                max-height: 24px;
             }}
             QPushButton:hover {{
                 border: 1px solid {color};

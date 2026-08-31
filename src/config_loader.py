@@ -24,12 +24,8 @@ def get_sql_config():
     if "SQL_SERVER" not in config:
         raise KeyError("Section [SQL_SERVER] is missing inside config.ini configuration.")
 
-    driver_path = resource_path(os.path.join("drivers", "odbc", "msodbcsql17.dll"))
-    if not os.path.exists(driver_path):
-        raise FileNotFoundError(f"Bundled ODBC driver missing at: {os.path.abspath(driver_path)}")
-
     return {
-        "Driver": driver_path,
+        "Driver": config.get("SQL_SERVER", "Driver", fallback="{ODBC Driver 17 for SQL Server}"),
         "Server": config.get("SQL_SERVER", "Server"),
         "Database": config.get("SQL_SERVER", "Database"),
         "UID": config.get("SQL_SERVER", "UID"),
